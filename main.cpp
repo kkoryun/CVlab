@@ -3,21 +3,64 @@
 
 #include <map>
 #include <tuple>
+
+
 class ArgParser
 {
 public:
-    class Type {
-
+    enum ArgType {
+        Int,
+        Str,
+        Float
     };
 
+    class Arg {
+    public:
+        Arg(const std::string& name, ArgType t) : 
+            name(name),
+            type(t)
+        {}
+
+        std::string name;
+        std::string value;
+        std::string description;
+        ArgType     type;
+    };
+
+    ArgParser() = default;
     ArgParser(int argc, char** argv) {
+        parse(argc, argv);
+    }
+
+    void add(std::string name, ArgType t) {
+        args[name] = Arg(name, t);
+    }
+
+    void parse(int argc, char** argv) {
+        if (argc == 1)
+        {
+            
+        }
+        for (size_t i = 0; i < argc; i++)
+        {
+            if (args.find(argv[i]) != args.end())
+            {
+                args[argv[i]].value = argv[i++];
+            }
+        }
 
     }
-    ~ArgParser();
+
+    ~ArgParser() = default;
 
 private:
-    using valueType = std::tuple<std::string, Type>;
-    std::map<std::string, valueType> args_map;
+    std::map <std::string, Arg> args;
+    
+    bool ToB(std::string value) {
+        return value == "true" ||
+            value == "True" ||
+            value == "T";
+    }
 };
 
 
