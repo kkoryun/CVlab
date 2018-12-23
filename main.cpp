@@ -4,6 +4,8 @@
 #include <tuple>
 #include <memory>
 
+#define DEBUG
+
 class ArgParser
 {
 public:
@@ -88,11 +90,6 @@ std::shared_ptr<ArgParser> create_arg_parser(int argc, char** argv) {
     return p;
 }
 
-//void format(std::string& str, std::string& arg1) {
-//
-//}
-#define DEBUG
-
 //only for 1 channels
 std::tuple<float, float> estimate_linear_contrast_params(const cv::Mat& img) {
     if (img.channels() != 1)
@@ -110,30 +107,32 @@ std::tuple<float, float> estimate_canny_params(const cv::Mat& img) {
     }
 }
 
-
 template<typename T>
-void __linear_contrast(cv::Mat& img, float alpha, float beta) {
-    float t;
+void __linear_contrast(const cv::Mat& img, cv::Mat& out, float alpha, float beta) {
+    T t;
     for (int y = 0; y < img.rows; y++)
     {
         for (int x = 0; x < img.cols; x++)
         {
             t = (alpha * img.at<T>(y, x) + T(beta));
-            img.at<T>(y, x) = t < std::numeric_limits<T>::max() ? t : std::numeric_limits<T>::max();
+            out.at<T>(y, x) = t < std::numeric_limits<T>::max() ? t : std::numeric_limits<T>::max();
         }
     }
 }
 
-void linear_contrast(cv::Mat& img, float alpha, float beta) {
+void linear_contrast(cv::Mat& img, cv::Mat& out, float alpha, float beta) {
     int t = img.type();
     switch (t)
     {
-    case CV_8UC1: __linear_contrast<unsigned char>(img, alpha, beta); break;
+    case CV_8UC1:
+        out = cv::Mat::zeros(img.size(), CV_8UC1);
+        __linear_contrast<unsigned char>(img, out, alpha, beta); 
+        break;
     default:
+        throw std::exception("uncorrect image type"); 
         break;
     }
 }
-
 
 void show_debug_image(cv::Mat image, std::string name, cv::Size debug_img_size = cv::Size(450, 300),
     int draw_time = 10) {
@@ -143,8 +142,7 @@ void show_debug_image(cv::Mat image, std::string name, cv::Size debug_img_size =
     cv::waitKey(draw_time);
 }
 
-cv::Mat image;
-void read_image(int argc, char** argv) {
+void read_image(int argc, char** argv, cv::Mat& image) {
     std::shared_ptr<ArgParser> p = create_arg_parser(argc, argv);
     std::string file_path = p->get_argument<std::string>("-i");
     
@@ -162,228 +160,129 @@ void read_image(int argc, char** argv) {
         throw std::exception("image empty");
     }
 }
-int main(int argc, char** argv) {
 
-    std::shared_ptr<ArgParser> p = create_arg_parser(argc, argv);
-    std::string file_path = p->get_argument<std::string>("-i");
-    cv::Mat image;
-    try
+void draw_corners(cv::Mat& image, const cv::Mat& corners, int threshold) {
+    for (int j = 0; j < corners.rows; j++)
     {
-        image = cv::imread(file_path);
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Can not read file "<< file_path <<std::endl;
-        throw std::exception(e);
-    }
-    if (image.empty())
-    {
-        throw std::exception("image empty");
-    }
-
-#ifdef DEBUG
-    cv::Size debug_img_size(450, 300);
-#endif // DEBUG
-
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(image, resized_img, debug_img_size);
-        cv::imshow("image after read", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
-
-
-
-    
-    // Convert to grayscale 
-    cv::Mat gray_image;
-    cv::cvtColor(image, gray_image, cv::COLOR_BGR2GRAY);
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(gray_image, resized_img, debug_img_size);
-        cv::imshow("gray scale image", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
-
-    auto params = estimate_linear_contrast_params(gray_image);
-    linear_contrast(gray_image, std::get<0>(params), std::get<1>(params));
-
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(gray_image, resized_img, debug_img_size);
-        cv::imshow("Contrast gray scale image", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
-    
-    cv::Mat blured_gray_image;
-    cv::blur(gray_image, blured_gray_image, cv::Size(3, 3));
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(blured_gray_image, resized_img, debug_img_size);
-        cv::imshow("blured_gray_image gray scale image", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
-
-    cv::Mat edges_image;
-    cv::Canny(blured_gray_image, edges_image, 10, 200);
-    
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(edges_image, resized_img, debug_img_size);
-        cv::imshow("Edges  image", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
-
-    cv::Mat corners, corners_norm, corners_norm_scaled;
-    //corners = cv::Mat::zeros(gray_image.size(), CV_32FC1);
-    corners = cv::Mat::zeros(gray_image.size(), CV_8UC1);
-    int blockSize = 10;
-    int apertureSize = 7;
-    double k = 0.04;
-    cv::cornerHarris(gray_image, corners, blockSize, apertureSize, k);
-    cv::normalize(corners, corners_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
-
-#ifdef DEBUG
-    {
-        cv::Mat corners_norm_;
-        cv::Mat resized_img;
-        cv::normalize(corners, corners_norm_, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
-        cv::resize(corners_norm_, resized_img, debug_img_size);
-        cv::imshow("Harris features", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
-
-    for (int j = 0; j < corners_norm.rows; j++)
-    {
-        for (int i = 0; i < corners_norm.cols; i++)
+        for (int i = 0; i < corners.cols; i++)
         {
-            if (static_cast<int>(corners_norm.at<uchar>(j, i)) > 50)
+            if (static_cast<int>(corners.at<uchar>(j, i)) > threshold)
             {
                 cv::circle(image, cv::Point(i, j), 10, cv::Scalar(0), 2, 8, 0);
             }
         }
     }
 
+}
+
+void invers_bin_imgage(cv::Mat image) {
+    for (int r = 0; r < image.rows; r++)
     {
-        cv::namedWindow("Corners");
-        cv::Mat resized_img;
-        cv::resize(image, resized_img, cv::Size(1350, 900));
-        cv::imshow("Corners", resized_img);
-        cv::waitKey(10);
-        //cv::resize(image, resized_img, debug_img_size);
+        for (int c = 0; c < image.cols; c++)
+        {
+            auto& e = image.at<uchar>(r, c);
+            e = e ^ static_cast<unsigned char>(255);
+        }
     }
+}
+
+template<typename img_T, typename integ_T>
+void filter_avg_dist(const cv::Mat& inverse_edges_image_bin, const cv::Mat& image, cv::Mat& processed_image, 
+    float coeff = 1.f) {
+    cv::Mat edge_distance_map;
+    cv::distanceTransform(inverse_edges_image_bin, edge_distance_map, cv::DIST_L2, 3);
+
+    cv::Mat integral_img;
+    cv::integral(image, integral_img);
+
+    image.copyTo(processed_image);
+    unsigned int filter_size;
+    for (int r = 1; r < image.rows - 1; r++)
+    {
+        for (int c = 1; c < image.cols - 1; c++)
+        {
+            filter_size = static_cast<int>(edge_distance_map.at<float>(r, c) * coeff);
+            filter_size = 3 / 2;
+            cv::Point pA(c - filter_size, r - filter_size);
+            cv::Point pB(c - filter_size, r + filter_size);
+            cv::Point pC(c + filter_size, r + filter_size);
+            cv::Point pD(c + filter_size, r - filter_size);
+            int A = integral_img.at<integ_T>(pA);
+            int B = integral_img.at<integ_T>(pB);
+            int C = integral_img.at<integ_T>(pC);
+            int D = integral_img.at<integ_T>(pD);
+            int rect_sum = C - B - D + A;
+            processed_image.at<img_T>(r, c) = rect_sum / 3 * 3;
+        }
+    }
+}
+int main(int argc, char** argv) {
+
+    // Read image
+    cv::Mat image;
+    read_image(argc, argv, image);
+    show_debug_image(image, "Original image");
+
+    // Convert to grayscale 
+    cv::Mat gray_image;
+    cv::cvtColor(image, gray_image, cv::COLOR_BGR2GRAY);
+    show_debug_image(gray_image, "Grayscale image");
+
+    // Contrast correction
+    cv::Mat contrast_gray_image;
+    std::tuple<float, float> params = estimate_linear_contrast_params(gray_image);
+    linear_contrast(gray_image, contrast_gray_image, std::get<0>(params), std::get<1>(params));
+    show_debug_image(contrast_gray_image, "Grayscale image");
     
+    // Bluring image for canny
+    cv::Mat blured_gray_image;
+    cv::blur(contrast_gray_image, blured_gray_image, cv::Size(3, 3));
+    show_debug_image(contrast_gray_image, "Grayscale image");
+
+    // Canny edgw detector
+    double canny_threshold1 = 10;
+    double canny_threshold2 = 200;
+    cv::Mat canny_edges_image;
+    cv::Canny(blured_gray_image, canny_edges_image, 10, 200);
+    show_debug_image(canny_edges_image, "Canny edge image");
+
+    //Harris corner detecting
+    int block_size = 10;
+    int aperture_size = 7;
+    double k = 0.04;
+    cv::Mat corners, corners_norm = cv::Mat::zeros(gray_image.size(), CV_8UC1), corners_norm_scaled;
+    //corners = cv::Mat::zeros(gray_image.size(), CV_32FC1);
+    cv::cornerHarris(gray_image, corners, block_size, aperture_size, k);
+    cv::normalize(corners, corners_norm, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
+    show_debug_image(corners_norm, "Harris corners");
+
+    // Draw corners
+    cv::Mat image_w_corners;
+    image.copyTo(image_w_corners);
+    draw_corners(image_w_corners, corners_norm, 50);
+    show_debug_image(image_w_corners, "Image with corners");
+
+    //
     cv::Mat corners_norm_bin = cv::Mat::zeros(gray_image.size(), CV_8UC1);
     cv::threshold(corners_norm, corners_norm_bin, 50, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
     cv::Mat corners_distance_map;
     cv::distanceTransform(corners_norm_bin, corners_distance_map, cv::DIST_L2, 3);
+    //cv::normalize(resized_img, resized_img, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
 
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(corners_distance_map, resized_img, debug_img_size);
-        cv::normalize(resized_img, resized_img, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
-        cv::imshow("corners_distance_map", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
     
+    // Convert to binary 
     cv::Mat edges_image_bin = cv::Mat::zeros(gray_image.size(), CV_8UC1);
-    cv::threshold(edges_image, edges_image_bin, 50, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    cv::threshold(canny_edges_image, edges_image_bin, 50, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    invers_bin_imgage(edges_image_bin);
+    cv::Mat debug_image;
+    cv::normalize(edges_image_bin, debug_image, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
+    show_debug_image(debug_image, "Invers binary image");
 
-    for (int j = 0; j < edges_image_bin.rows; j++)
-    {
-        for (int i = 0; i < edges_image_bin.cols; i++)
-        {
-            auto& e = edges_image_bin.at<uchar>(j, i);
-            if (e == 0)
-            {
-                e = 255;
-            }
-            else
-            {
-                e = 0;
-            }
-        }
-    }
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(edges_image_bin, resized_img, debug_img_size);
-        cv::normalize(resized_img, resized_img, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
-        cv::imshow("edges_image_bin", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
- 
-    cv::Mat edge_distance_map;
-    cv::distanceTransform(edges_image_bin, edge_distance_map, cv::DIST_L2, 3);
+    // Filter image
+    cv::Mat processed_image;
+    filter_avg_dist<uchar, int>(edges_image_bin, gray_image, processed_image);
+    show_debug_image(processed_image, "Processed image");
 
-
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(edge_distance_map, resized_img, debug_img_size);
-        cv::normalize(resized_img, resized_img, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
-        cv::imshow("edge_distance_map", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
-
-    cv::Mat integral_img;
-    cv::integral(gray_image, integral_img);
-    
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(gray_image, resized_img, debug_img_size);
-        cv::normalize(resized_img, resized_img, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
-        cv::imshow("gray_image 111", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
-
-    cv::Mat processed_image(gray_image);
-    int coeff = 1.f;
-    unsigned int filter_size;
-    for (int j = 1; j < processed_image.rows - 2; j++)
-    {
-        for (int i = 1; i < processed_image.cols - 2; i++)
-        {
-            filter_size = edge_distance_map.at<int>(j, i) * k;
-            filter_size = 3 / 2;
-            cv::Point pA(i - filter_size, j - filter_size);
-            cv::Point pB(i - filter_size, j + filter_size);
-            cv::Point pC(i + filter_size, j + filter_size);
-            cv::Point pD(i + filter_size, j - filter_size);
-            int A = integral_img.at<int>(pA);
-            int B = integral_img.at<int>(pB);
-            int C = integral_img.at<int>(pC);
-            int D = integral_img.at<int>(pD);
-            int rect_sum = C - B - D + A;
-            processed_image.at<uchar>(j,i) = rect_sum / 3 * 3;
-        }                                                   
-    }
-#ifdef DEBUG
-    {
-        cv::Mat resized_img;
-        cv::resize(processed_image, resized_img, debug_img_size);
-        cv::normalize(resized_img, resized_img, 0, 255, cv::NORM_MINMAX, CV_8UC1, cv::Mat());
-        cv::imshow("procrssed", resized_img);
-        cv::waitKey(10);
-    }
-#endif // DEBUG
     cv::waitKey();
     return 0;
 }
