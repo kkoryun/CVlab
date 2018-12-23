@@ -194,9 +194,14 @@ void clamp(cv::Point& p, const cv::Size& s) {
 }
 template<typename img_T, typename integ_T>
 void filter_avg_dist(const cv::Mat& inverse_edges_image_bin, const cv::Mat& image, cv::Mat& processed_image, 
-    float coeff = 0.01f) {
-    cv::Mat edge_distance_map;
-    cv::distanceTransform(inverse_edges_image_bin, edge_distance_map, cv::DIST_L2, 3);
+    float coeff = 5.f) {
+    cv::Mat distance_map;
+    cv::distanceTransform(inverse_edges_image_bin, distance_map, cv::DIST_L2, cv::DIST_MASK_5);
+    normalize(distance_map, distance_map, 0, 1, cv::NORM_MINMAX);
+
+    cv::Mat debug_image;
+    normalize(distance_map, debug_image, 0, 255, cv::NORM_MINMAX, CV_8UC1);
+    show_debug_image(debug_image,"Distance map");
 
     cv::Mat integral_img;
     cv::integral(image, integral_img);
@@ -207,8 +212,10 @@ void filter_avg_dist(const cv::Mat& inverse_edges_image_bin, const cv::Mat& imag
     {
         for (int c = 0; c < image.cols - 1; c++)
         {
-            filter_size = static_cast<int>(edge_distance_map.at<float>(r, c) * coeff);
-            if (filter_size <= 0) continue;
+            filter_size = static_cast<int>(distance_map.at<float>(r, c) * coeff);
+            filter_size |= 1;
+
+            if (filter_size <= 1) continue;
             offset = filter_size / 2;
             int i_r = r + 1;
             int i_c = c + 1;
