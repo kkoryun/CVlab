@@ -186,9 +186,15 @@ void invers_bin_imgage(cv::Mat image) {
     }
 }
 
+void clamp(cv::Point& p, const cv::Size& s) {
+    if (p.x < 0) p.x = 0;
+    if (p.x >= s.width) p.x = s.width - 1;
+    if (p.y < 0) p.y = 0;
+    if (p.y >= s.height) p.y = s.height - 1;
+}
 template<typename img_T, typename integ_T>
 void filter_avg_dist(const cv::Mat& inverse_edges_image_bin, const cv::Mat& image, cv::Mat& processed_image, 
-    float coeff = 1.f) {
+    float coeff = 0.01f) {
     cv::Mat edge_distance_map;
     cv::distanceTransform(inverse_edges_image_bin, edge_distance_map, cv::DIST_L2, 3);
 
@@ -196,23 +202,30 @@ void filter_avg_dist(const cv::Mat& inverse_edges_image_bin, const cv::Mat& imag
     cv::integral(image, integral_img);
 
     image.copyTo(processed_image);
-    unsigned int filter_size;
-    for (int r = 1; r < image.rows - 1; r++)
+    unsigned int filter_size, offset;
+    for (int r = 0; r < image.rows - 1; r++)
     {
-        for (int c = 1; c < image.cols - 1; c++)
+        for (int c = 0; c < image.cols - 1; c++)
         {
             filter_size = static_cast<int>(edge_distance_map.at<float>(r, c) * coeff);
-            filter_size = 3 / 2;
-            cv::Point pA(c - filter_size, r - filter_size);
-            cv::Point pB(c - filter_size, r + filter_size);
-            cv::Point pC(c + filter_size, r + filter_size);
-            cv::Point pD(c + filter_size, r - filter_size);
+            if (filter_size <= 0) continue;
+            offset = filter_size / 2;
+            int i_r = r + 1;
+            int i_c = c + 1;
+            cv::Point pA(i_c - offset - 1, i_r - offset - 1);
+            cv::Point pB(i_c - offset - 1, i_r + offset);
+            cv::Point pC(i_c + offset, i_r + offset);
+            cv::Point pD(i_c + offset, i_r - offset - 1);
+            clamp(pA, integral_img.size());
+            clamp(pC, integral_img.size());
+            clamp(pB, integral_img.size());
+            clamp(pD, integral_img.size());
             int A = integral_img.at<integ_T>(pA);
             int B = integral_img.at<integ_T>(pB);
             int C = integral_img.at<integ_T>(pC);
             int D = integral_img.at<integ_T>(pD);
             int rect_sum = C - B - D + A;
-            processed_image.at<img_T>(r, c) = rect_sum / 3 * 3;
+            processed_image.at<img_T>(r, c) = rect_sum / (filter_size * filter_size);
         }
     }
 }
@@ -222,7 +235,7 @@ int main(int argc, char** argv) {
     cv::Mat image;
     read_image(argc, argv, image);
     show_debug_image(image, "Original image");
-
+    
     // Convert to grayscale 
     cv::Mat gray_image;
     cv::cvtColor(image, gray_image, cv::COLOR_BGR2GRAY);
